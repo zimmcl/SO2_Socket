@@ -1,7 +1,15 @@
 /**
  * @file servidor.c
  * @author Ezequiel Zimmel (ezequiezimmel@gmail.com)
- * @brief 
+ * @brief Implemetacion de socket UNIX. El servidor funciona como estacion terrestre
+ *        solicitando datos a satelite.  
+ *        Comienza creando un socket Unix orientado a la conexión. El usuario debe colocar 
+ *        por linea de comandos el socket a utilizar (login <usuario>@<socket>). 
+ *        Una vez realizada la validacion de credenciales se crea el socket y queda a la
+ *        espera de una conexion entrante por parte de un satelite. Cuando conecta, deriva
+ *        la conexion original a una conexion secundaria, proceso hijo, para mantener al
+ *        proceso padre a la espera de nuevas conexiones.
+ * 
  * @version 0.1
  * @date 2020-01-28
  * 
@@ -52,7 +60,10 @@ int obtener_Telemetria(int, char *);
 int Servidor_UP(char *);
 
 /**
- * @brief 
+ * @brief Estado inicial de conexion al servidor. Realiza la validacion de las
+ *        credenciales ingresadas. Si no son reconocidas se solician nuevamente.
+ *        Cuando se validan, inicializa el servicio de conexion con el satelite
+ *        mediante la funcion Servidor_UP. 
  * 
  * @param argc 
  * @param argv 
@@ -89,9 +100,11 @@ int main(int argc, char *argv[])
 }
 
 /**
- * @brief 
+ * @brief Crea el socket para atender las peticiones entrantes.
+ *        Cuando se conecta un cliente, deriva dicha conexion a un proceso
+ *        hijo para mantenerse a le espera de nuevas conexiones entrantes.
  * 
- * @param sock_f 
+ * @param sock_f file descriptor
  * @return int 
  */
 int Servidor_UP(char *sock_f)
@@ -164,11 +177,15 @@ int Servidor_UP(char *sock_f)
 }
 
 /**
- * @brief 
+ * @brief Valida las credecinales del usuario que intenta logearse. Las contrasenas 
+ *        se encuentran almacenadas en un archivo de texto. Durante el ingreso de la
+ *        contrasena se ocultan los caracteres. Si al cabo de 3 intentos las credenciales
+ *        no son validadas, da por finalizada la sesion de logeo solicitando nuevamente el 
+ *        login.
  * 
  * @param buffer 
- * @param sock_name 
- * @param usuario 
+ * @param sock_name nombre del file descriptor
+ * @param usuario nombre de usuario que solicita la validacion de sus credenciales
  * @return int 
  */
 int validacion(char *buffer, char *sock_name, char *usuario)
@@ -197,7 +214,7 @@ int validacion(char *buffer, char *sock_name, char *usuario)
     command = token;
     if (strcmp(command, "login") != 0)
     {
-        printf("\nPara loguearse utilice: login <usuario> \n");
+        printf("\nPara loguearse utilice: login <usuario>@<socket> \n");
         return 0;
     }
 
@@ -265,7 +282,9 @@ int validacion(char *buffer, char *sock_name, char *usuario)
 }
 
 /**
- * @brief 
+ * @brief Mantiene la sesion para comunicarse con el satelite. Cada comando ingresado por el 
+ *        usuario es analizado y si es valido activa el procedimiento, en caso contrario
+ *        descarta el comando.
  * 
  * @param socket 
  * @param usuario 
@@ -336,7 +355,7 @@ void sesion(int socket, char *usuario, char *sock)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento de actualizacion del binario del satelite.
  * 
  * @param sock 
  * @return int 
@@ -390,7 +409,8 @@ int update_Firmware(int sock)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento que recepta la imagen geoterrestre que envia
+ *        el satelite.
  * 
  * @param socket 
  * @return int 
@@ -457,7 +477,9 @@ int start_Scanning(int socket)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento que obtiene datos de estado del satelite.
+ *        La transferencia de los datos se realiza a traves de un socket
+ *        DATAGRAM, no orientado a la conexión.
  * 
  * @param socketfd 
  * @param sock_name 

@@ -509,7 +509,7 @@ void getValue(char *file, char *value, char *key)
 void getfirmware_version(char *buffer)
 {
     strcat(buffer, "Version Firmware: ");
-    strcat(buffer, "1");
+    strcat(buffer, "2");
 }
 
 /**

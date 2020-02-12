@@ -1,8 +1,16 @@
 
 /**
  * @file servidor.c
- * @author your name (you@domain.com)
- * @brief 
+ * @author Ezequiel Zimmel (ezequielzimmel@gmail.com)
+ * @brief Implemetacion de socket INET. El servidor funciona como estacion terrestre
+ *        solicitando datos a satelite.  
+ *        Comienza creando un socket INET orientado a la conexión. El usuario debe ingresar
+ *        por linea de comandos solo su nombre (login <usuario>), la direccion y el puerto
+ *        del servidor es fijo,192.168.1.5:6020.  
+ *        Una vez realizada la validacion de credenciales se crea el socket y queda a la
+ *        espera de una conexion entrante por parte de un satelite. Cuando conecta, deriva
+ *        la conexion original a una conexion secundaria, proceso hijo, para mantener al
+ *        proceso padre a la espera de nuevas conexiones.
  * @version 0.1
  * @date 2020-01-28
  * 
@@ -54,7 +62,10 @@ int obtener_Telemetria(int, char *, char *);
 int Servidor_UP(char *, char *);
 
 /**
- * @brief 
+ * @brief Estado inicial de conexion al servidor. Realiza la validacion de las
+ *        credenciales ingresadas. Si no son reconocidas se solician nuevamente.
+ *        Cuando se validan, inicializa el servicio de conexion con el satelite
+ *        mediante la funcion Servidor_UP. 
  * 
  * @param argc 
  * @param argv 
@@ -92,7 +103,9 @@ int main(int argc, char *argv[])
 }
 
 /**
- * @brief 
+ * @brief Crea el socket para atender las peticiones entrantes.
+ *        Cuando se conecta un cliente, deriva dicha conexion a un proceso
+ *        hijo para mantenerse a le espera de nuevas conexiones entrantes.
  * 
  * @param ip 
  * @param port 
@@ -113,7 +126,7 @@ int Servidor_UP(char *ip, char *port)
 
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr("192.168.1.4");
+    serv_addr.sin_addr.s_addr = inet_addr("192.168.1.5");
     //serv_addr.sin_addr.s_addr = inet_addr("192.168.0.10");
     serv_addr.sin_port = htons(6020);
     inet_ntop(AF_INET, &(serv_addr.sin_addr.s_addr), str2, INET_ADDRSTRLEN);
@@ -168,7 +181,11 @@ int Servidor_UP(char *ip, char *port)
 }
 
 /**
- * @brief 
+ * @brief Valida las credecinales del usuario que intenta logearse. Las contrasenas 
+ *        se encuentran almacenadas en un archivo de texto. Durante el ingreso de la
+ *        contrasena se ocultan los caracteres. Si al cabo de 3 intentos las credenciales
+ *        no son validadas, da por finalizada la sesion de logeo solicitando nuevamente el 
+ *        login.
  * 
  * @param buffer 
  * @param usuario 
@@ -266,7 +283,9 @@ int validacion(char *buffer, char *usuario)
 }
 
 /**
- * @brief 
+ * @brief Mantiene la sesion para comunicarse con el satelite. Cada comando ingresado por el 
+ *        usuario es analizado y si es valido activa el procedimiento, en caso contrario
+ *        descarta el comando.
  * 
  * @param socket 
  * @param usuario 
@@ -338,7 +357,7 @@ void sesion(int socket, char *usuario, char *ip, char *port)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento de actualizacion del binario del satelite.
  * 
  * @param sock 
  * @return int 
@@ -393,7 +412,8 @@ int update_Firmware(int sock)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento que recepta la imagen geoterrestre que envia
+ *        el satelite.
  * 
  * @param socket 
  * @return int 
@@ -460,7 +480,10 @@ int start_Scanning(int socket)
 }
 
 /**
- * @brief 
+ * @brief Procedimiento que obtiene datos de estado del satelite.
+ *        La comunicacion se realiza a traves de socket UDP, no orientado
+ *        a la conexión. El puerto a emplear es el mismo que el puerto de
+ *        la conexion TCP.
  * 
  * @param socketfd 
  * @param ip 

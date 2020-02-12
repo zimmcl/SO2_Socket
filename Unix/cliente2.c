@@ -1,20 +1,20 @@
 /**
  * @file cliente.c
  * @author Ezequiel Zimmel (ezequielzimmel@gmail.com)
- * @brief Implemetacion de socket INET. El cliente funciona como satelite respondiendo 
+ * @brief Implemetacion de socket UNIX. El cliente funciona como satelite respondiendo 
  *        a las peticiones que realiza el servidor.
- * 	      Comienza creando un socket INET orientado a la conexión. El usuario debe 
- *        ingresar como argumento la direccion del socket destino, la del servidor 
- *        que debe estar creado para poder conectarse. 
- *                  ./<ejecutable> <IPv4>:<Puerto>  
- *                          ejemplo ./cliente 192.168.1.5:6020 
- *        Una vez conectado con servidor queda a la espera de comandos de operacion.
+ * 	      Comienza creando un socket Unix orientado a la conexión. El usuario debe 
+ *        ingresar como argumento el nombre del socket a utilizar (creado primero por el 
+ *        servidor). ./<ejecutable> <socket>, ejemplo ./cliente server 
+ *        Una vez conectado al servidor queda a la espera de comandos de operacion.
+ * 
  * @version 0.1
  * @date 2020-01-28
  * 
  * @copyright Copyright (c) 2020
  * 
  */
+
 #define HORA 3600
 #define MIN 60
 #define SIZE 4096
@@ -22,7 +22,9 @@
 #define TAM2 150
 #define BUFSIZE 1024
 #define BUFF_SIZE 1024
+#define BYTES_STREAM 1500
 #define FILE_BUFFER_SIZE 1500
+#define DIRECTORIO_IMAGEN "/"
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_CYAN "\x1b[36m"
@@ -31,26 +33,26 @@
 /* Librerias usados por los distintos codigos fuente */
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <errno.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/sysinfo.h>
 #include <time.h>
-#include <sys/stat.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
 #include <pthread.h>
-#include <linux/unistd.h>
-#include <linux/kernel.h>
 #include <fcntl.h>
 #include <math.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/types.h>
+#include <sys/sysinfo.h>
+#include <sys/stat.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <linux/unistd.h>
+#include <linux/kernel.h>
 
-/* Funciones que escribí */
-int conectar(char *, char *);
+/* Funciones definidas */
+int conectar(char *);
 void sesionActiva(int, char *, char *);
 void update_Firmware(int, char *, char *);
 int start_Scanning(int);
@@ -70,20 +72,13 @@ void getValue(char *, char *, char *);
  * 
  * @param argc 
  * @param argv argv[0] nombre del ejecutable. Empleado en la funcion update_firmware.
- *             argv[1] direccion IPv4 y puerto del servidor.
+ *             argv[1] nombre del socket UNIX. Medio de comunicación de los procesos.
  * @return int 
  */
 int main(int argc, char *argv[])
 {
-    char nombre[50];
-    char remote_host[50];
-    char remote_host2[50];
-    strcpy(nombre, argv[0]);
-    strcpy(remote_host, argv[1]);
-    strcpy(remote_host2, argv[1]);
-
-    int socket = conectar(nombre, remote_host);
-    sesionActiva(socket, nombre, remote_host2);
+    int socket = conectar(argv[1]);
+    sesionActiva(socket, argv[1], argv[0]);
     close(socket);
     return 0;
 }
@@ -93,49 +88,33 @@ int main(int argc, char *argv[])
  *        del servidor. En caso de no poder conectarse, espera 5 segundos
  *        para volver a intentarlo.
  * 
- * @param name_f 
- * @param remote_host direccion IPv4 y puerto de servidor
- * @return int identificador del cliente para identificarse con el servidor
+ * @param sock_name socket UNIX que usa el cliente y servidor para comunicarse
+ * @return int identificador (file descriptor) del cliente para comunicarse
+ *         con el servidor
  */
-int conectar(char *name_f, char *remote_host)
+int conectar(char *sock_name)
 {
-    static int sockfd;
+    int sockfd, servlen;
     uint8_t conexion = 1;
-    struct sockaddr_in serv_addr, cli_addr;
-    char buffer[50];
-    char nombre[50];
-    char *direccionIp;
-    int puerto;
-    struct hostent *server;
+    struct sockaddr_un serv_addr;
+    char buffer[20];
+    /* Inicialización del socket */
+    memset((char *)&serv_addr, '\0', sizeof(serv_addr));
+    serv_addr.sun_family = AF_UNIX;        /* Tipo de socket */
+    strcpy(serv_addr.sun_path, sock_name); /* Directorio del socket UNIX, pasado como argumento */
+    servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
 
-    direccionIp = strtok(remote_host, ":");
-    puerto = atoi(strtok(NULL, " "));
-    server = gethostbyname(direccionIp);
-    strtok(name_f, "/");
-    strcpy(nombre, strtok(NULL, " "));
-    strcpy(name_f, nombre);
+    sockfd = socket(AF_UNIX, SOCK_STREAM, 0); /* Socket UNIX TCP */
 
-    memset((char *)&serv_addr, '0', sizeof(serv_addr));                                  /* Limpia la estructura */
-    serv_addr.sin_family = AF_INET;                                                      /* INET Sock */
-    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length); /* dirección IP */
-    serv_addr.sin_port = htons(puerto);                                                  /* puerto del servidor */
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
     {
         perror("creación de socket");
         exit(1);
     }
-
-    cli_addr.sin_family = AF_INET;
-    cli_addr.sin_addr.s_addr = inet_addr("192.168.1.4");
-    //cli_addr.sin_port = htons(10010);
-    //bind(sockfd, (struct sockaddr*) &cli_addr, sizeof(cli_addr));
-
     while (conexion)
     {
         printf("\n=====================================");
-        if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+        if (connect(sockfd, (struct sockaddr *)&serv_addr, servlen) < 0)
         {
             printf("\n  Cliente inicializado - Intento[%d] \n", conexion);
             printf("  Conexion [");
@@ -148,7 +127,7 @@ int conectar(char *name_f, char *remote_host)
         }
         else
         {
-            printf("\n  Cliente inicializado [ID: %d] [%s] \n", getpid(), inet_ntoa(cli_addr.sin_addr));
+            printf("\n  Cliente inicializado [ID: %d] \n", getpid());
             sprintf(buffer, "%d", getpid());
             write(sockfd, buffer, sizeof(buffer));
             memset(buffer, '\0', TAM);
@@ -162,13 +141,14 @@ int conectar(char *name_f, char *remote_host)
         }
     }
 
+    /* Posterior a la conexion con el servidor, se verifica si existe el archivo
+       cliente2 (de actualizacion de firmware). Si existe lo elimina. */
     FILE *fd = fopen("cliente2", "r");
     if (fd != NULL)
     {
         fclose(fd);
         remove("cliente2");
     }
-
     return sockfd;
 }
 
@@ -177,11 +157,12 @@ int conectar(char *name_f, char *remote_host)
  *        el comando sat_logoff. Se mantiene a la espera de que el servidor
  *        envie un comando, lo comprueba y actua en consecuencia.
  * 
- * @param socket socket id
+ * @param socket file descriptor del socket cliente
+ * @param sock_name socket UNIX empleado para la comunicacion entre cliente
+ *                  y servidor
  * @param nombre nombre del codigo ejecutable
- * @param server_ip direccion del equipo remoto
  */
-void sesionActiva(int socket, char *nombre, char *server_ip)
+void sesionActiva(int socket, char *sock_name, char *nombre)
 {
     char buffer[TAM];
     int n = 0;
@@ -201,23 +182,21 @@ void sesionActiva(int socket, char *nombre, char *server_ip)
         }
         if (!strcmp(buffer, "update_firmware"))
         {
-            update_Firmware(socket, nombre, server_ip);
+            update_Firmware(socket, nombre, sock_name);
             sesionActiva = 0;
         }
         if (!strcmp(buffer, "start_scanning"))
         {
             n = start_Scanning(socket);
-            memset(buffer, '\0', sizeof(buffer));
         }
         if (!strcmp(buffer, "obtener_telemetria"))
         {
-            n = obtener_Telemetria(socket, server_ip);
-            memset(buffer, '\0', sizeof(buffer));
+            n = obtener_Telemetria(socket, sock_name);
         }
         if (!strcmp(buffer, "sat_logoff"))
         {
             printf(ANSI_COLOR_RED);
-            printf("\n Cerrando comunicacion.\n");
+            printf("\nCerrando comunicacion.\n");
             printf(ANSI_COLOR_RESET);
             close(socket);
             exit(0);
@@ -232,11 +211,11 @@ void sesionActiva(int socket, char *nombre, char *server_ip)
  *        proceso actual en ejecución y reconecta con el servidor levantando
  *        ya la nueva version.
  * 
- * @param sock 
- * @param nombre 
- * @param server 
+ * @param sock interfaz socket (ID)
+ * @param nombre nombre del programa en ejecucion
+ * @param sock_name nombre del socket file descriptor
  */
-void update_Firmware(int sock, char *nombre, char *server)
+void update_Firmware(int sock, char *nombre, char *sock_name)
 {
     printf("=====================================\n\n");
     printf("UPDATE FIRMWARE\n\n");
@@ -248,7 +227,8 @@ void update_Firmware(int sock, char *nombre, char *server)
 
     /* Renombro al ejecutable actual para receptar el nuevo 
        ejecutable actualizado */
-    strcpy(old_name, nombre);
+    strtok(nombre, "/");
+    strcpy(old_name, strtok(NULL, " "));
 
     strcpy(new_name, old_name);
     strcat(new_name, "2");
@@ -275,9 +255,8 @@ void update_Firmware(int sock, char *nombre, char *server)
     printf("N° de paquetes a recibir: %s\n", buffer);
     npackages = atoi(buffer);
 
-    for (int i = 0; i <= npackages; i++)
+    for (int i = 0; i < npackages; i++)
     {
-        usleep(1000);
         memset(buffer, '\0', sizeof(buffer));
         if ((byteRead = read(sock, buffer, sizeof(buffer))) != 0)
         {
@@ -295,46 +274,49 @@ void update_Firmware(int sock, char *nombre, char *server)
     }
     memset(buffer, '\0', sizeof(buffer));
 
+    close(sock);
     printf("Reiniciando...\n");
     printf("=====================================\n");
     close(new_exe);
+    sleep(2);
 
+    /* Prepara la ejecucion del nuevo firmware */
     memset(buffer, '\0', TAM);
     strcpy(buffer, "./");
     strcat(buffer, old_name);
 
-    close(sock);
-    sleep(5);
+    /* socket UNIX ../server, debe ser tomado como parametro...VER */
     chmod(old_name, S_IRWXO | S_IRWXU | S_IRWXG);
-    char *args[] = {buffer, server, NULL};
+    char *args[] = {buffer, sock_name, NULL};
     execvp(args[0], args);
 }
 
 /**
  * @brief Envia imagen satelital. Determina la cantidad de bytes de la
  *        imagen y luego obtiene la cantidad paquetes a ser enviados
- *        de tal manera que el protocolo TCP no lo fragmente.
+ *        de tal manera que el protocolo TCP no lo fragmente.     
  * 
  * @param socket 
  * @return int 
  */
 int start_Scanning(int socket)
 {
-    printf("=====================================\n\n");
-    printf("START SCANNING\n\n");
-
     int send_img = 0;
     int packages = 0;
     struct stat buf;
+    int count;
+    char sendBuffer[FILE_BUFFER_SIZE];
+
+    printf("=====================================\n\n");
+    printf("START SCANNING\n\n");
+
     if ((send_img = open("geoes.jpg", O_RDONLY)) < 0)
     {
         printf("No existe la imagen\n");
         return 0;
     }
-    memset(&packages, '\0', sizeof(packages));
 
-    int count;
-    char sendBuffer[FILE_BUFFER_SIZE];
+    memset(&packages, '\0', sizeof(packages));
     memset(sendBuffer, '\0', sizeof(sendBuffer));
     fstat(send_img, &buf);
     off_t fileSize = buf.st_size;
@@ -369,11 +351,15 @@ int start_Scanning(int socket)
  *        servidor mediante socket DATAGRAM.
  * 
  * @param socketfd 
- * @param remote_host 
+ * @param sock_name 
  * @return int 
  */
-int obtener_Telemetria(int socketfd, char *remote_host)
+int obtener_Telemetria(int socketfd, char *sock_name)
 {
+    char sock_name_UDP[20];
+    memset(sock_name_UDP, '\0', sizeof(sock_name_UDP));
+    strcpy(sock_name_UDP, sock_name);
+    strcat(sock_name_UDP, "_UDP");
     printf("=====================================\n\n");
     printf("ENVIANDO TELEMETRIA\n\n");
 
@@ -382,53 +368,26 @@ int obtener_Telemetria(int socketfd, char *remote_host)
     long dia = hora * 24;    //probar con "define" desde las cabezeras
                              //para no desperdiciar memoria.
 
+    char buffer[TAM2];
     struct sysinfo estructuraInformacion;
+    memset(buffer, '\0', TAM2);
     sysinfo(&estructuraInformacion); //Obtengo datos del sistema
+    int descriptor_socket, resultado;
+    struct sockaddr_un struct_cliente;
+    /* Creacion de socket */
+    if ((descriptor_socket = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0)
+    {
+        perror("socket");
+    }
+    /* Inicialización y establecimiento de la estructura del cliente */
+    memset(&struct_cliente, 0, sizeof(struct_cliente));
+    struct_cliente.sun_family = AF_UNIX;
+    strncpy(struct_cliente.sun_path, sock_name_UDP, sizeof(struct_cliente.sun_path));
     long tiempo = estructuraInformacion.uptime;
 
-    char buffer[TAM2];
-    char remote_host_t[20];
-    strcpy(remote_host_t, remote_host);
-    char *server_ip = strtok(remote_host_t, ":");
-    struct sockaddr_in dest_addr;
-    int sock_udp, puerto, n;
-    struct hostent *server;
-
-    memset(buffer, '\0', sizeof(buffer));
-
-    read(socketfd, buffer, sizeof(buffer));
-    puerto = atoi(buffer);
-    printf("Puerto a usar: %d\n", puerto);
-
-    //Levanta socket sin conexion como cliente
-    server = gethostbyname(server_ip);
-    if (server == NULL)
-    {
-        fprintf(stderr, "ERROR, no existe el host\n");
-        exit(0);
-    }
-
-    sock_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock_udp < 0)
-    {
-        perror("apertura de socket");
-        exit(1);
-    }
-
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(puerto);
-    dest_addr.sin_addr = *((struct in_addr *)server->h_addr);
-
-    const int valor = 1;
-    setsockopt(sock_udp, SOL_SOCKET, SO_REUSEADDR, &valor, sizeof(valor));
-
-    memset(&(dest_addr.sin_zero), '\0', 8);
-
-    //Como son 7 datos a mostrar, cada vez que envio un dato aumento el indice
-    //para ir enviando otro dato
     for (int i = 0; i < 7; i++)
     {
-        memset(buffer, '\0', sizeof(buffer));
+        memset(buffer, '\0', TAM2);
         switch (i)
         {
         case 0:
@@ -459,8 +418,8 @@ int obtener_Telemetria(int socketfd, char *remote_host)
         }
         sleep(1);
         /* Envío de datagrama al servidor */
-        n = sendto(sock_udp, buffer, TAM2, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-        if (n < 0)
+        resultado = sendto(descriptor_socket, buffer, TAM2, 0, (struct sockaddr *)&struct_cliente, sizeof(struct_cliente));
+        if (resultado < 0)
         {
             perror("sendto");
             exit(1);
@@ -468,9 +427,8 @@ int obtener_Telemetria(int socketfd, char *remote_host)
         printf("[%d-7] %s\n", i + 1, buffer);
     } //fin for
     //finaliza socket sin conexion
-    memset(buffer, '\0', sizeof(buffer));
-    printf("\n=====================================\n\n");
-    close(sock_udp);
+    printf("\n=====================================\n");
+    close(descriptor_socket);
     return 0;
 }
 
@@ -509,7 +467,7 @@ void getValue(char *file, char *value, char *key)
 void getfirmware_version(char *buffer)
 {
     strcat(buffer, "Version Firmware: ");
-    strcat(buffer, "1");
+    strcat(buffer, "2");
 }
 
 /**
@@ -539,7 +497,6 @@ void CPU(char *buffer)
     char cpu[10];
     FILE *fp;
     char *command = "grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}'";
-
     fp = popen(command, "r");
     fscanf(fp, "%s", cpu);
     strcat(buffer, "CPU: ");
